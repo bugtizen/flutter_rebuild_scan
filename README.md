@@ -3,6 +3,12 @@
 `flutter_rebuild_scan` is a rebuild scanner for Flutter apps.
 It highlights rebuilt widgets in real time and shows top rebuilders in a draggable debug panel.
 
+## Demo
+
+![flutter_rebuild_scan targeted rebuild demo](https://raw.githubusercontent.com/bugtizen/flutter_rebuild_scan/main/media/rebuild-scan-demo.gif)
+
+The demo shows targeted mode recording rebuild counts, painting widget highlights, and opening the rebuild stats panel. Targeted mode works in debug, profile, and release builds.
+
 ## Features
 
 - Real-time overlay highlight for widgets rebuilt in the current frame
@@ -15,7 +21,7 @@ It highlights rebuilt widgets in real time and shows top rebuilders in a draggab
 
 ```yaml
 dependencies:
-  flutter_rebuild_scan: ^0.1.0
+  flutter_rebuild_scan: ^0.2.0
 ```
 
 ## Quick start

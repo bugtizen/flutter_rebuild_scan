@@ -151,18 +151,18 @@ class RebuildScanHighlightPainter extends CustomPainter {
     required Size viewport,
     double flashStrength = 1.0,
   }) {
-    const horizontalPadding = 6.0;
-    const verticalPadding = 3.0;
-    final badgeAlpha = (0.45 + (0.5 * flashStrength)).clamp(0.0, 1.0);
-    final textAlpha = (0.65 + (0.35 * flashStrength)).clamp(0.0, 1.0);
+    const horizontalPadding = 7.0;
+    const verticalPadding = 4.0;
+    final badgeAlpha = (0.8 + (0.2 * flashStrength)).clamp(0.0, 1.0);
 
     final textPainter = TextPainter(
       text: TextSpan(
         text: label,
         style: TextStyle(
-          color: Colors.white.withValues(alpha: textAlpha),
-          fontSize: 10,
-          fontWeight: FontWeight.w500,
+          color: Colors.black.withValues(alpha: 0.85),
+          fontFamily: 'Roboto',
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -199,8 +199,13 @@ class RebuildScanHighlightPainter extends CustomPainter {
     final badgePaint = Paint()
       ..color = const Color(0xFFFFD54F).withValues(alpha: badgeAlpha)
       ..style = PaintingStyle.fill;
+    final borderPaint = Paint()
+      ..color = const Color(0xFF5D4037).withValues(alpha: 0.45)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
 
     canvas.drawRect(badgeRect, badgePaint);
+    canvas.drawRect(badgeRect, borderPaint);
     textPainter.paint(
       canvas,
       Offset(left + horizontalPadding, top + verticalPadding),

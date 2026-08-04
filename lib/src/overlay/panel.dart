@@ -176,21 +176,20 @@ class ScanPanelPage extends StatelessWidget {
             ),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Expanded(
-                child: Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
+              Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 10,
+                runSpacing: 6,
+                children: <Widget>[
+                  Text('recent ${entry.recentCount}'),
+                  Text('frame ${entry.frameCount}'),
+                  Text('total ${entry.totalCount}'),
+                ],
               ),
-              const SizedBox(width: 12),
-              Text('recent ${entry.recentCount}'),
-              const SizedBox(width: 8),
-              Text('frame ${entry.frameCount}'),
-              const SizedBox(width: 8),
-              Text('total ${entry.totalCount}'),
             ],
           ),
         );
