@@ -1,0 +1,26 @@
+name: flutter_rebuild_scan
+description: Debug rebuild scanner for Flutter apps with live overlays and ranked rebuild stats.
+version: 0.1.0
+repository: https://github.com/bugtizen/flutter_rebuild_scan
+issue_tracker: https://github.com/bugtizen/flutter_rebuild_scan/issues
+topics:
+  - flutter
+  - debugging
+  - performance
+  - devtools
+  - widgets
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

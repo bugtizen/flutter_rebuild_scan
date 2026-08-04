@@ -1,0 +1,10 @@
+.codegraph/
+.dart_tool/
+.serena/
+.vscode/
+*.iml
+build/
+example/.dart_tool/
+example/build/
+pubspec.lock
+example/pubspec.lock
