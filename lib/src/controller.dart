@@ -1,14 +1,16 @@
-import 'dart:ui';
-
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import 'config.dart';
 import 'frame_tracker.dart';
 import 'models.dart';
 import 'registry.dart';
+import 'utils/rect_utils.dart';
 import 'utils/throttler.dart';
 
+/// Imperative controller for reading and updating rebuild scan state.
 class RebuildScanController {
+  /// Creates a rebuild scan controller.
   RebuildScanController({
     RebuildScanConfig? config,
     RebuildScanMode mode = RebuildScanMode.off,
@@ -38,18 +40,31 @@ class RebuildScanController {
   RebuildScanMode _mode;
   RebuildScanStatus _status;
   bool _attached = false;
+  final Map<int, Element> _pendingRectElements = <int, Element>{};
   List<RebuildScanEntrySnapshot> _cachedTopEntries =
       const <RebuildScanEntrySnapshot>[];
 
+  /// Listenable that emits a [RebuildScanSnapshot] when scanner state changes.
   ValueListenable<RebuildScanSnapshot> get listenable => _snapshotNotifier;
+
+  /// Current scanner snapshot.
   RebuildScanSnapshot get snapshot => _snapshotNotifier.value;
+
+  /// Active scanner configuration.
   RebuildScanConfig get config => _config;
+
+  /// Whether the scanner currently accepts rebuild events.
   bool get isEnabled =>
       _status == RebuildScanStatus.active ||
       _status == RebuildScanStatus.noTargets;
+
+  /// Configured scan mode.
   RebuildScanMode get mode => _mode;
+
+  /// Effective scanner status.
   RebuildScanStatus get status => _status;
 
+  /// Attaches the controller to the frame scheduler.
   void attach() {
     if (_attached) {
       return;
@@ -61,6 +76,7 @@ class RebuildScanController {
     _emitSnapshot(forceTopRefresh: true);
   }
 
+  /// Detaches the controller from frame scheduling.
   void detach() {
     if (!_attached) {
       return;
@@ -69,6 +85,7 @@ class RebuildScanController {
     _frameTracker.stop();
   }
 
+  /// Updates the configured scan mode and effective status.
   void setMode({
     required RebuildScanMode mode,
     required RebuildScanStatus status,
@@ -89,6 +106,7 @@ class RebuildScanController {
     _emitSnapshot(forceTopRefresh: true, rebuiltThisFrame: const <int>{});
   }
 
+  /// Replaces the active scanner configuration.
   void setConfig(RebuildScanConfig config) {
     if (_config == config) {
       return;
@@ -98,12 +116,15 @@ class RebuildScanController {
     _emitSnapshot(forceTopRefresh: true);
   }
 
+  /// Clears all collected rebuild statistics.
   void clearStats() {
     _registry.clear();
+    _pendingRectElements.clear();
     _cachedTopEntries = const <RebuildScanEntrySnapshot>[];
     _emitSnapshot(forceTopRefresh: true, rebuiltThisFrame: const <int>{});
   }
 
+  /// Records one rebuild for a tracked widget id.
   void recordRebuild({
     required int id,
     required Type widgetType,
@@ -135,6 +156,7 @@ class RebuildScanController {
     }
   }
 
+  /// Updates the last measured rectangle for a tracked widget id.
   void updateRect({required int id, required Rect? rect}) {
     if (!isEnabled || !_config.trackRects) {
       return;
@@ -142,10 +164,25 @@ class RebuildScanController {
     _registry.updateRect(id, rect: rect);
   }
 
+  /// Queues a widget element for safe rectangle measurement at frame end.
+  void queueRectMeasurement({required int id, required Element element}) {
+    if (!isEnabled || !_config.trackRects) {
+      return;
+    }
+    _pendingRectElements[id] = element;
+  }
+
+  @visibleForTesting
+  /// Number of queued rectangle measurements waiting for frame end.
+  int get pendingRectMeasurementCount => _pendingRectElements.length;
+
+  /// Marks an entry as disposed and removes pending rectangle work.
   void markDisposed(int id) {
+    _pendingRectElements.remove(id);
     _registry.markDisposed(id);
   }
 
+  /// Releases scheduler and notifier resources.
   void dispose() {
     detach();
     _snapshotNotifier.dispose();
@@ -159,6 +196,8 @@ class RebuildScanController {
     final nowMicros = _nowMicros();
     final rebuiltIds = _registry.takeRebuiltThisFrame();
 
+    _flushRectMeasurements();
+
     _registry.prune(
       maxEntries: _config.maxEntries,
       staleDuration: _computeStaleWindow(_config.sampleWindow),
@@ -170,6 +209,19 @@ class RebuildScanController {
       rebuiltThisFrame: rebuiltIds,
       nowMicros: nowMicros,
     );
+  }
+
+  void _flushRectMeasurements() {
+    if (!_config.trackRects || _pendingRectElements.isEmpty) {
+      _pendingRectElements.clear();
+      return;
+    }
+
+    final pending = Map<int, Element>.of(_pendingRectElements);
+    _pendingRectElements.clear();
+    pending.forEach((id, element) {
+      _registry.updateRect(id, rect: RectUtils.getGlobalRect(element));
+    });
   }
 
   void _emitSnapshot({

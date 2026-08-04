@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 
 import 'controller.dart';
 import 'scan_scope.dart';
-import 'utils/rect_utils.dart';
 
+/// Utilities for targeted rebuild tracking.
 abstract final class RebuildScan {
+  /// Records a rebuild for the widget whose [context] is currently building.
+  ///
+  /// This is intended for [RebuildScanMode.targeted]. It records the counter
+  /// immediately and queues rectangle measurement for the end of the frame.
   static void mark(BuildContext context, {String? name, Object? tag}) {
     final scope = ScanScope.maybeOf(context);
     if (scope == null ||
@@ -26,18 +29,16 @@ abstract final class RebuildScan {
       widgetType: widgetType,
     );
 
-    if (controller.config.trackRects) {
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (!element.mounted) {
-          return;
-        }
-        controller.updateRect(id: id, rect: RectUtils.getGlobalRect(element));
-      });
-    }
+    controller.queueRectMeasurement(id: id, element: element);
   }
 }
 
+/// Widget boundary that records rebuilds of the boundary itself.
+///
+/// This does not observe every descendant rebuild. Prefer [RebuildScan.mark]
+/// inside the widget build method when measuring a specific widget.
 class RebuildScanBoundary extends StatefulWidget {
+  /// Creates a rebuild scan boundary around [child].
   const RebuildScanBoundary({
     super.key,
     required this.child,
@@ -46,9 +47,16 @@ class RebuildScanBoundary extends StatefulWidget {
     this.enabled = true,
   });
 
+  /// Child rendered by this boundary.
   final Widget child;
+
+  /// Human-readable name shown in the panel.
   final String? name;
+
+  /// Optional caller-provided grouping tag.
   final Object? tag;
+
+  /// Whether this boundary should record rebuilds.
   final bool enabled;
 
   @override
@@ -88,14 +96,7 @@ class _RebuildScanBoundaryState extends State<RebuildScanBoundary> {
       widgetType: widget.child.runtimeType,
     );
 
-    if (controller.config.trackRects) {
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) {
-          return;
-        }
-        controller.updateRect(id: _id, rect: RectUtils.getGlobalRect(context));
-      });
-    }
+    controller.queueRectMeasurement(id: _id, element: context as Element);
 
     return widget.child;
   }

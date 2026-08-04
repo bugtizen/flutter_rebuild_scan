@@ -6,9 +6,10 @@ import 'controller.dart';
 import 'models.dart';
 import 'overlay/overlay_entry.dart';
 import 'scan_scope.dart';
-import 'utils/rect_utils.dart';
 
+/// Root widget that installs rebuild scan instrumentation and overlay UI.
 class RebuildScanApp extends StatefulWidget {
+  /// Creates a rebuild scan app wrapper around [child].
   const RebuildScanApp({
     super.key,
     required this.child,
@@ -17,9 +18,16 @@ class RebuildScanApp extends StatefulWidget {
     this.controller,
   });
 
+  /// Application subtree to instrument.
   final Widget child;
+
+  /// Scan mode to run.
   final RebuildScanMode mode;
+
+  /// Optional scanner configuration.
   final RebuildScanConfig? config;
+
+  /// Optional externally owned controller.
   final RebuildScanController? controller;
 
   @override
@@ -125,9 +133,7 @@ class _ScanAppState extends State<RebuildScanApp> {
       widgetType: rebuiltWidget.runtimeType,
     );
 
-    if (_controller.config.trackRects) {
-      _controller.updateRect(id: id, rect: RectUtils.getGlobalRect(element));
-    }
+    _controller.queueRectMeasurement(id: id, element: element);
   }
 
   void _initController() {
@@ -191,6 +197,7 @@ _ResolvedScanMode _resolveMode(RebuildScanMode mode) {
 }
 
 @visibleForTesting
+/// Resolves scan mode into effective status for a debug/non-debug runtime.
 RebuildScanStatus debugResolveRebuildScanStatus(
   RebuildScanMode mode, {
   required bool debugMode,

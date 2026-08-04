@@ -1,7 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_rebuild_scan/flutter_rebuild_scan.dart';
+import 'package:flutter_rebuild_scan/src/scan_app.dart'
+    show debugResolveRebuildScanStatus;
 
 void main() {
   test('RebuildScanApp defaults to mode-based enablement', () {
@@ -198,6 +201,117 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('targeted marks preserve counts when rect measurement fails', (
+    tester,
+  ) async {
+    final controller = RebuildScanController(
+      config: const RebuildScanConfig(showPanel: false),
+    );
+
+    await tester.pumpWidget(
+      RebuildScanApp(
+        mode: RebuildScanMode.targeted,
+        controller: controller,
+        config: const RebuildScanConfig(showPanel: false),
+        child: const MaterialApp(home: _UnsafeMarkedHost()),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+
+    expect(tester.takeException(), isNull);
+    expect(controller.snapshot.totalRebuilds, greaterThan(0));
+    expect(
+      controller.snapshot.topEntries.any((entry) => entry.rect == null),
+      isTrue,
+    );
+
+    controller.dispose();
+  });
+
+  testWidgets('debugAuto preserves counts when rect measurement fails', (
+    tester,
+  ) async {
+    final controller = RebuildScanController(
+      config: const RebuildScanConfig(showPanel: false),
+    );
+
+    await tester.pumpWidget(
+      RebuildScanApp(
+        mode: RebuildScanMode.debugAuto,
+        controller: controller,
+        config: const RebuildScanConfig(showPanel: false),
+        child: const MaterialApp(home: _UnsafeRenderHost()),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+
+    expect(tester.takeException(), isNull);
+    expect(controller.snapshot.totalRebuilds, greaterThan(0));
+
+    controller.dispose();
+  });
+
+  testWidgets('rect measurement queue coalesces duplicate ids per frame', (
+    tester,
+  ) async {
+    final controller = RebuildScanController(
+      config: const RebuildScanConfig(showPanel: false),
+      mode: RebuildScanMode.targeted,
+      status: RebuildScanStatus.active,
+    );
+
+    const firstKey = ValueKey<String>('first');
+    const secondKey = ValueKey<String>('second');
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Row(
+          children: <Widget>[
+            SizedBox(key: firstKey, width: 1, height: 1),
+            SizedBox(key: secondKey, width: 1, height: 1),
+          ],
+        ),
+      ),
+    );
+
+    controller.queueRectMeasurement(
+      id: 1,
+      element: tester.element(find.byKey(firstKey)),
+    );
+    controller.queueRectMeasurement(
+      id: 1,
+      element: tester.element(find.byKey(secondKey)),
+    );
+
+    expect(controller.pendingRectMeasurementCount, 1);
+
+    controller.dispose();
+  });
+
+  testWidgets('trackRects false skips queued rect measurement', (tester) async {
+    final controller = RebuildScanController(
+      config: const RebuildScanConfig(showPanel: false, trackRects: false),
+      mode: RebuildScanMode.targeted,
+      status: RebuildScanStatus.active,
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(home: SizedBox(key: ValueKey<String>('target'))),
+    );
+
+    controller.queueRectMeasurement(
+      id: 1,
+      element: tester.element(find.byKey(const ValueKey<String>('target'))),
+    );
+
+    expect(controller.pendingRectMeasurementCount, 0);
+
+    controller.dispose();
+  });
+
   testWidgets('RebuildScanBoundary counts only its own build', (tester) async {
     final controller = RebuildScanController(
       config: const RebuildScanConfig(showPanel: false),
@@ -298,6 +412,33 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets('queued disposed elements are skipped without exception', (
+    tester,
+  ) async {
+    final controller = RebuildScanController(
+      config: const RebuildScanConfig(showPanel: false),
+    );
+
+    final key = GlobalKey<_ToggleHostState>();
+
+    await tester.pumpWidget(
+      RebuildScanApp(
+        mode: RebuildScanMode.targeted,
+        controller: controller,
+        config: const RebuildScanConfig(showPanel: false),
+        child: MaterialApp(home: _ToggleHost(key: key)),
+      ),
+    );
+
+    key.currentState!.hideTrackedWidget();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+
+    expect(tester.takeException(), isNull);
+
+    controller.dispose();
+  });
 }
 
 class CounterHost extends StatefulWidget {
@@ -390,6 +531,80 @@ class _FrameworkHeavyHost extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _UnsafeMarkedHost extends StatelessWidget {
+  const _UnsafeMarkedHost();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: _ThrowingTransformWidget(
+        child: Builder(
+          builder: (context) {
+            RebuildScan.mark(context, name: 'UnsafeMarkedHost');
+            return const SizedBox(width: 24, height: 24);
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _UnsafeRenderHost extends StatelessWidget {
+  const _UnsafeRenderHost();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(body: Offstage(child: Text('unavailable rect')));
+  }
+}
+
+class _ThrowingTransformWidget extends SingleChildRenderObjectWidget {
+  const _ThrowingTransformWidget({required super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _ThrowingTransformRenderBox();
+  }
+}
+
+class _ThrowingTransformRenderBox extends RenderProxyBox {
+  @override
+  void applyPaintTransform(RenderBox child, Matrix4 transform) {
+    throw StateError('transform unavailable during transition');
+  }
+}
+
+class _ToggleHost extends StatefulWidget {
+  const _ToggleHost({super.key});
+
+  @override
+  State<_ToggleHost> createState() => _ToggleHostState();
+}
+
+class _ToggleHostState extends State<_ToggleHost> {
+  bool _showTrackedWidget = true;
+
+  void hideTrackedWidget() {
+    setState(() {
+      _showTrackedWidget = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: _showTrackedWidget
+          ? Builder(
+              builder: (context) {
+                RebuildScan.mark(context, name: 'TransientMarkedHost');
+                return const SizedBox(width: 24, height: 24);
+              },
+            )
+          : const SizedBox.shrink(),
     );
   }
 }
