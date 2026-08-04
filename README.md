@@ -5,7 +5,7 @@ It highlights rebuilt widgets in real time and shows top rebuilders in a draggab
 
 ## Demo
 
-![flutter_rebuild_scan targeted rebuild demo](https://raw.githubusercontent.com/bugtizen/flutter_rebuild_scan/main/media/rebuild-scan-demo.gif)
+![flutter_rebuild_scan targeted rebuild demo](./media/rebuild-scan-demo.gif)
 
 The demo shows targeted mode recording rebuild counts, painting widget highlights, and opening the rebuild stats panel. Targeted mode works in debug, profile, and release builds.
 
