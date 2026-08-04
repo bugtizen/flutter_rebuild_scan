@@ -1,3 +1,7 @@
+## 0.3.0
+
+- Update demo doc
+
 ## 0.2.0
 
 - Fixed release/profile targeted mode so rebuild counters do not depend on debug-only auto instrumentation.
