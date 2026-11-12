@@ -15,6 +15,10 @@ class RebuildScanHighlightPainter extends CustomPainter {
   final RebuildScanController controller;
   final Offset Function()? origin;
   final Map<String, TextPainter> _badges = {};
+  final Paint _fill = Paint();
+  final Paint _stroke = Paint();
+  final Paint _badge = Paint();
+  final Paint _badgeBorder = Paint();
   void disposeResources() {
     for (final text in _badges.values) {
       text.dispose();
@@ -22,27 +26,39 @@ class RebuildScanHighlightPainter extends CustomPainter {
     _badges.clear();
   }
 
-  late RebuildScanSnapshot snapshot;
+  RebuildScanSnapshot get snapshot => controller.visualSnapshot();
+  late RebuildScanConfig _config;
+  List<RebuildScanEntrySnapshot> _entries = const [];
   int nowMicros = 0;
 
   @override
   void paint(Canvas canvas, Size size) {
-    snapshot = controller.visualSnapshot();
+    final watch = Stopwatch()..start();
+    try {
+      _paint(canvas, size);
+    } finally {
+      controller.recordVisualCost(watch.elapsedMicroseconds);
+    }
+  }
+
+  void _paint(Canvas canvas, Size size) {
+    _entries = controller.prepareVisualEntries();
+    _config = controller.config;
     nowMicros = controller.timestampMicros;
     canvas.clipRect(Offset.zero & size);
-    if (!snapshot.enabled) {
+    if (!controller.isEnabled) {
       return;
     }
 
     final overlayOrigin = origin?.call() ?? Offset.zero;
-    final mode = snapshot.config.highlightMode;
+    final mode = _config.highlightMode;
 
     if (mode == HighlightMode.flash) {
-      for (final entry in snapshot.entriesById.values) {
+      for (final entry in _entries) {
         if (entry.rect == null) {
           continue;
         }
-        if (entry.recentCount < snapshot.config.minRebuildsToShow) {
+        if (entry.recentCount < _config.minRebuildsToShow) {
           continue;
         }
 
@@ -72,16 +88,15 @@ class RebuildScanHighlightPainter extends CustomPainter {
       return;
     }
 
-    for (final entry in snapshot.entriesById.values) {
+    for (final entry in _entries) {
       if (entry.rect == null) {
         continue;
       }
-      if (entry.recentCount < snapshot.config.minRebuildsToShow) {
+      if (entry.recentCount < _config.minRebuildsToShow) {
         continue;
       }
       final ageMicros = nowMicros - entry.lastMicros;
-      if (ageMicros < 0 ||
-          ageMicros > snapshot.config.sampleWindow.inMicroseconds) {
+      if (ageMicros < 0 || ageMicros > _config.sampleWindow.inMicroseconds) {
         continue;
       }
 
@@ -89,9 +104,9 @@ class RebuildScanHighlightPainter extends CustomPainter {
       if (mode == HighlightMode.heatmap) {
         final intensity =
             (entry.recentCount /
-                    snapshot.config.sampleWindow.inMicroseconds *
+                    _config.sampleWindow.inMicroseconds *
                     1000000 /
-                    snapshot.config.heatmapMaxRebuildsPerSecond)
+                    _config.heatmapMaxRebuildsPerSecond)
                 .clamp(0.0, 1.0);
         _paintHeatmap(canvas, rect, intensity);
       } else {
@@ -108,7 +123,7 @@ class RebuildScanHighlightPainter extends CustomPainter {
   }
 
   String _badgeLabel(RebuildScanEntrySnapshot entry) {
-    final count = switch (snapshot.config.badgeCountMode) {
+    final count = switch (_config.badgeCountMode) {
       RebuildBadgeCountMode.frame => entry.frameCount,
       RebuildBadgeCountMode.recent => entry.recentCount,
       RebuildBadgeCountMode.total => entry.totalCount,
@@ -117,7 +132,7 @@ class RebuildScanHighlightPainter extends CustomPainter {
   }
 
   void _paintOutline(Canvas canvas, Rect rect) {
-    final paint = Paint()
+    final paint = _stroke
       ..color = const Color(0xFFFFB300)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
@@ -125,13 +140,13 @@ class RebuildScanHighlightPainter extends CustomPainter {
   }
 
   void _paintFlash(Canvas canvas, Rect rect, double flashStrength) {
-    final stroke = Paint()
+    final stroke = _stroke
       ..color = const Color(
         0xFFFFD54F,
       ).withValues(alpha: 0.2 + (0.8 * flashStrength))
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
-    final fill = Paint()
+    final fill = _fill
       ..color = const Color(0xFFFFD54F).withValues(alpha: 0.08 * flashStrength)
       ..style = PaintingStyle.fill;
 
@@ -140,7 +155,7 @@ class RebuildScanHighlightPainter extends CustomPainter {
   }
 
   void _paintHeatmap(Canvas canvas, Rect rect, double intensity) {
-    final fill = Paint()
+    final fill = _fill
       ..color = Color.lerp(
         const Color(0xFFFFFF8D),
         const Color(0xFFD50000),
@@ -148,7 +163,7 @@ class RebuildScanHighlightPainter extends CustomPainter {
       )!.withValues(alpha: 0.04 + (0.16 * intensity))
       ..style = PaintingStyle.fill;
 
-    final outline = Paint()
+    final outline = _stroke
       ..color = const Color(
         0xFFFF6D00,
       ).withValues(alpha: 0.5 + (0.5 * intensity))
@@ -217,10 +232,10 @@ class RebuildScanHighlightPainter extends CustomPainter {
       badgeSize.height,
     );
 
-    final badgePaint = Paint()
+    final badgePaint = _badge
       ..color = const Color(0xFFFFD54F).withValues(alpha: badgeAlpha)
       ..style = PaintingStyle.fill;
-    final borderPaint = Paint()
+    final borderPaint = _badgeBorder
       ..color = const Color(0xFF5D4037).withValues(alpha: 0.45)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;

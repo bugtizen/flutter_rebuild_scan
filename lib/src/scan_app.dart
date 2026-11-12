@@ -127,6 +127,9 @@ class _ScanAppState extends State<RebuildScanApp> {
       return;
     }
 
+    if (_controller.config.ignoreTypes.contains(rebuiltWidget.runtimeType)) {
+      return;
+    }
     _controller.recordRebuild(id: id, widgetType: rebuiltWidget.runtimeType);
 
     _controller.queueRectMeasurement(id: id, element: element);

@@ -149,3 +149,35 @@ memory over 10 minutes. Initial targets versus scanner-off are <=0.25 ms additio
 UI p95 for counters-only, <=1 ms for 100 highlights, and <=1 percentage point
 additional budget overruns. These require device measurements; widget tests
 cannot establish them. Minimum Flutter: 3.38.5.
+
+### Visible counters under load
+
+Automatic debug tracking and on-screen badges remain enabled by default. Rebuild
+counts are never sampled to reduce overlay load. Visual updates run at up to 60 Hz,
+back off to 30/15 Hz when measured overlay work exceeds a 1 ms soft budget, and
+recover gradually after sustained inexpensive updates. The budget is checked
+between geometry measurements; an individual framework transform cannot be
+interrupted. Badge positions can lag while geometry work is spread across updates.
+
+Shared transforms and clips are cached for one refresh only. Highlights use a
+bounded drawing list, repaint notifications are coalesced, and expiry uses one
+shared timer. Deferred visual work uses a separate one-shot wake. Opening the
+panel reuses the published aggregate snapshot. Existing integrations need no
+configuration changes.
+
+Run the device comparison from `example/`:
+
+```sh
+flutter run -t lib/benchmark.dart
+```
+
+Tap **Run comparison**. It runs three paired measurements with 2,000 cells and
+100 active cells, 10 seconds warm-up and 30 seconds measurement per mode. JSON
+output includes actual cell builds, completed engine frames, UI p95/p99, raster
+p95, and budget overruns. Inputs target 1,000 notifications/sec; actual builds
+may be lower due to Flutter coalescing. Timing reports are batched, so boundaries
+are approximate. Debug compares auto tracking against off; `--profile` compares
+targeted tracking against off. Repeat on physical 60/120 Hz devices and inspect
+retained memory over ten minutes. Device performance targets above remain
+unverified until those measurements are recorded; widget tests prove correctness
+and work coalescing, not frame-time guarantees.

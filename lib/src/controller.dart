@@ -10,6 +10,7 @@ import 'models.dart';
 import 'registry.dart';
 import 'utils/rect_utils.dart';
 import 'utils/throttler.dart';
+import 'utils/visual_refresh.dart';
 
 /// Imperative controller for reading and updating rebuild scan state.
 class RebuildScanController {
@@ -71,29 +72,12 @@ class RebuildScanController {
   /// Capture a fresh aggregate snapshot.
   RebuildScanSnapshot captureSnapshot() {
     _emitSnapshot(forceTopRefresh: true);
-    return snapshot;
+    return _snapshotNotifier.value;
   }
 
   /// Paint state for capped visible targets.
   RebuildScanSnapshot visualSnapshot() {
-    _elements.removeWhere(
-      (id, ref) =>
-          ref.target == null ||
-          !ref.target!.mounted ||
-          !_registry.isRecent(
-            id,
-            _nowMicros(),
-            _config.highlightMode == HighlightMode.flash
-                ? 400000
-                : _config.sampleWindow.inMicroseconds,
-          ),
-    );
-    for (final item in _elements.entries) {
-      _registry.updateRect(
-        item.key,
-        rect: RectUtils.getGlobalRect(item.value.target!),
-      );
-    }
+    prepareVisualEntries();
     return RebuildScanSnapshot(
       frameNumber: _frameTracker.currentFrame,
       totalRebuilds: _registry.totalRebuilds,
@@ -109,6 +93,94 @@ class RebuildScanController {
         ids: _elements.keys,
       ),
     );
+  }
+
+  final VisualRefresh _refresh = VisualRefresh();
+  Timer? _wake;
+  int _lastVisual = 0;
+  int _paintFrame = -1;
+  int _cursor = 0;
+  final Set<int> _geometryPending = {};
+  final List<RebuildScanEntrySnapshot> _drawEntries = [];
+
+  /// Prepares the capped drawing list without an aggregate snapshot.
+  List<RebuildScanEntrySnapshot> prepareVisualEntries() {
+    _elements.removeWhere(
+      (id, ref) =>
+          ref.target == null ||
+          !ref.target!.mounted ||
+          !_registry.isRecent(
+            id,
+            _nowMicros(),
+            _config.highlightMode == HighlightMode.flash
+                ? 400000
+                : _config.sampleWindow.inMicroseconds,
+          ),
+    );
+    _geometryPending.removeWhere((id) => !_elements.containsKey(id));
+    final geometry = RectMeasurementPass();
+    final watch = Stopwatch()..start();
+    final targets = _elements.entries.toList(growable: false);
+    var measured = 0;
+    while (measured < targets.length) {
+      final item = targets[(_cursor + measured) % targets.length];
+      _registry.updateRect(
+        item.key,
+        rect: geometry.measure(item.value.target!),
+      );
+      _geometryPending.remove(item.key);
+      measured++;
+      if (watch.elapsedMicroseconds >= 1000) break;
+    }
+    if (targets.isNotEmpty) _cursor = (_cursor + measured) % targets.length;
+    _lastVisual = _nowMicros();
+    _wake?.cancel();
+    _wake = null;
+    _expiry?.cancel();
+    _expiry = null;
+    _registry.fillVisibleEntries(
+      _drawEntries,
+      _elements.keys,
+      _config.sampleWindow,
+      _lastVisual,
+    );
+    if (_drawEntries.isNotEmpty) {
+      final lifetime = _config.highlightMode == HighlightMode.flash
+          ? 400001
+          : _config.sampleWindow.inMicroseconds + 1;
+      final oldest = _drawEntries
+          .map((e) => e.lastMicros)
+          .reduce((a, b) => a < b ? a : b);
+      final delay = lifetime - (_lastVisual - oldest);
+      _expiry = Timer(Duration(microseconds: delay < 1 ? 1 : delay), () {
+        _expiry = null;
+        if (isEnabled) _paintSignal.emit();
+      });
+      if (_geometryPending.isNotEmpty) {
+        _wake = Timer(Duration(microseconds: _refresh.intervalMicros), () {
+          _wake = null;
+          if (isEnabled) _paintSignal.emit();
+        });
+      }
+    }
+    return _drawEntries;
+  }
+
+  /// Reports preparation and paint cost for adaptive visual updates.
+  void recordVisualCost(int micros) => _refresh.record(micros, _nowMicros());
+
+  void _requestVisual() {
+    if (_elements.isEmpty || _paintFrame == _frameTracker.currentFrame) return;
+    final remaining = _refresh.intervalMicros - (_nowMicros() - _lastVisual);
+    if (remaining > 0) {
+      _wake ??= Timer(Duration(microseconds: remaining), () {
+        _wake = null;
+        if (isEnabled) _paintSignal.emit();
+      });
+      return;
+    }
+    _paintFrame = _frameTracker.currentFrame;
+    _paintSignal.emit();
   }
 
   late final FrameTracker _frameTracker;
@@ -187,6 +259,8 @@ class RebuildScanController {
     _attached = false;
     _syncTimings();
     _expiry?.cancel();
+    _wake?.cancel();
+    _wake = null;
     _frameTracker.stop();
   }
 
@@ -203,7 +277,10 @@ class RebuildScanController {
     _status = status;
     if (!isEnabled) {
       _expiry?.cancel();
+      _wake?.cancel();
+      _wake = null;
       _pendingRectElements.clear();
+      _geometryPending.clear();
       _elements.clear();
     }
     settingsRevision.value++;
@@ -227,16 +304,27 @@ class RebuildScanController {
     _config = config;
     settingsRevision.value++;
     _syncTimings();
+    _expiry?.cancel();
+    _wake?.cancel();
+    _wake = null;
+    _paintFrame = -1;
+    _lastVisual = 0;
     if (!config.trackRects) _elements.clear();
+    _paintSignal.emit();
     _topListThrottler.reset();
     _emitSnapshot(forceTopRefresh: true);
   }
 
   /// Clears all collected rebuild statistics.
   void clearStats() {
+    _expiry?.cancel();
+    _wake?.cancel();
+    _wake = null;
+    _drawEntries.clear();
     _registry.clear();
     _metrics.clear();
     _frameMetrics.value = const FrameMetricsSnapshot();
+    _geometryPending.clear();
     _elements.clear();
     _paintSignal.emit();
     _pendingRectElements.clear();
@@ -270,7 +358,7 @@ class RebuildScanController {
       maxEntries: _config.maxEntries,
     );
 
-    if (!_attached) {
+    if (!_attached && _snapshotNotifier.observed) {
       _emitSnapshot(forceTopRefresh: true, nowMicros: nowMicros);
     }
   }
@@ -288,6 +376,7 @@ class RebuildScanController {
     if (!isEnabled || !_config.trackRects) {
       return;
     }
+    if (_pendingRectElements[id] == element) return;
     if (_pendingRectElements.isEmpty) {
       SchedulerBinding.instance.addPostFrameCallback((_) {
         _pendingRectElements.clear();
@@ -297,21 +386,17 @@ class RebuildScanController {
     while (_pendingRectElements.length > _config.maxHighlights) {
       _pendingRectElements.remove(_pendingRectElements.keys.first);
     }
-    _elements.remove(id);
-    _elements[id] = WeakReference(element);
+    _geometryPending.add(id);
+    final previous = _elements.remove(id);
+    _elements[id] = previous?.target == element
+        ? previous!
+        : WeakReference(element);
     while (_elements.length > _config.maxHighlights) {
-      _elements.remove(_elements.keys.first);
+      final evicted = _elements.keys.first;
+      _elements.remove(evicted);
+      _geometryPending.remove(evicted);
     }
-    _paintSignal.emit();
-    _expiry?.cancel();
-    _expiry = Timer(
-      _config.highlightMode == HighlightMode.flash
-          ? const Duration(milliseconds: 401)
-          : _config.sampleWindow + const Duration(milliseconds: 1),
-      () {
-        _paintSignal.emit();
-      },
-    );
+    _requestVisual();
   }
 
   @visibleForTesting
@@ -321,6 +406,7 @@ class RebuildScanController {
   /// Marks an entry as disposed and removes pending rectangle work.
   void markDisposed(int id) {
     _elements.remove(id);
+    _geometryPending.remove(id);
     _pendingRectElements.remove(id);
     _registry.markDisposed(id);
   }
@@ -329,6 +415,9 @@ class RebuildScanController {
   void dispose() {
     _expiry?.cancel();
     detach();
+    _pendingRectElements.clear();
+    _drawEntries.clear();
+    _geometryPending.clear();
     _elements.clear();
     settingsRevision.dispose();
     _frameMetrics.dispose();
@@ -342,9 +431,9 @@ class RebuildScanController {
     }
 
     _registry.currentFrame = frameNumber;
-    if (_elements.isNotEmpty) _paintSignal.emit();
+    _requestVisual();
     _pendingRectElements.clear();
-    _registry.takeRebuiltThisFrame();
+    _registry.clearRebuiltThisFrame();
     final now = _nowMicros();
     if (now - _lastPublication < _config.statsInterval.inMicroseconds) return;
     _lastPublication = now;

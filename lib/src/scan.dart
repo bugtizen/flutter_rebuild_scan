@@ -22,6 +22,7 @@ abstract final class RebuildScan {
     final widgetType = element.widget.runtimeType;
     final id = identityHashCode(element);
 
+    if (controller.config.ignoreTypes.contains(widgetType)) return;
     controller.recordRebuild(
       id: id,
       name: name,
@@ -90,6 +91,9 @@ class _RebuildScanBoundaryState extends State<RebuildScanBoundary> {
     if (_boundController != controller) _boundController?.markDisposed(_id);
     _boundController = controller;
 
+    if (controller.config.ignoreTypes.contains(widget.child.runtimeType)) {
+      return widget.child;
+    }
     controller.recordRebuild(
       id: _id,
       name: widget.name,

@@ -1,3 +1,11 @@
+## 0.5.0
+
+- Keep exact rebuild counts and visible badges while adapting visual refresh under load.
+- Coalesce repaint work, reuse weak references and drawing resources, and share expiry timers.
+- Cache shared geometry within a refresh and rotate budgeted geometry work fairly.
+- Skip ignored targets before geometry work and reuse published panel snapshots.
+- Add counter/geometry regression coverage and a paired on/off device benchmark.
+
 ## 0.4.0
 
 - Observe application frames without a continuous overlay-driven frame loop.

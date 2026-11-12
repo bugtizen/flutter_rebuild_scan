@@ -75,6 +75,23 @@ class ScanRegistry {
     return result;
   }
 
+  void clearRebuiltThisFrame() => _rebuiltThisFrame.clear();
+
+  void fillVisibleEntries(
+    List<RebuildScanEntrySnapshot> result,
+    Iterable<int> ids,
+    Duration window,
+    int now,
+  ) {
+    result.clear();
+    for (final id in ids) {
+      final entry = _entries[id];
+      if (entry != null) {
+        result.add(_toSnapshot(entry, window: window, nowMicros: now));
+      }
+    }
+  }
+
   void clear() {
     _entries.clear();
     _rebuiltThisFrame.clear();

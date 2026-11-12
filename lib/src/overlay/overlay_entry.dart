@@ -157,7 +157,7 @@ class _ScanOverlayEntryState extends State<ScanOverlayEntry> {
                           valueListenable: widget.controller.listenable,
                           builder: (context, latest, _) => ScanPanelPage(
                             controller: widget.controller,
-                            snapshot: widget.controller.snapshot,
+                            snapshot: latest,
                             onClose: _closePanel,
                             onDrag: (details) {
                               final height =
