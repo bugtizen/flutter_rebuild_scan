@@ -1,3 +1,14 @@
+## 0.4.0
+
+- Observe application frames without a continuous overlay-driven frame loop.
+- Separate paint-only highlights from throttled aggregate reporting.
+- Add completed engine timing summaries, a performance preset, and optional native graphs.
+- Use a fixed rebuilds/second heatmap scale and correct stale frame badges and rectangles.
+- Bound visible highlights, retain weak geometry references, and show a compact panel.
+- Add a local mock feed comparing direct notifications with frame coalescing.
+- Replace the single main demo with a backend-free gallery of eleven usage cases, integration snippets, and interactive examples.
+- Add common login form and selectable feed examples, including isolated field tracking, lazy list rows, saved-row state, and Hero navigation into story details.
+
 ## 0.3.0
 
 - Update demo doc
@@ -22,3 +33,4 @@
 - Replaced misleading `enabled` opt-in with `off`, `debugAuto`, and `targeted` modes.
 - Added panel states for unsupported debug auto mode and targeted mode with no marks.
 - Hardened auto-scan hook sharing and filtered Flutter framework internals by default.
+

@@ -50,6 +50,13 @@ enum RebuildBadgeCountMode {
 class RebuildScanConfig {
   /// Creates rebuild scan configuration.
   const RebuildScanConfig({
+    this.collectFrameTimings = true,
+    this.showFrameMonitor = false,
+    this.showPerformanceOverlay = false,
+    this.statsInterval = const Duration(milliseconds: 250),
+    this.maxHighlights = 100,
+    this.heatmapMaxRebuildsPerSecond = 60,
+    this.targetRefreshRate,
     this.highlightMode = HighlightMode.flash,
     this.badgeCountMode = RebuildBadgeCountMode.recent,
     this.minRebuildsToShow = 1,
@@ -63,7 +70,35 @@ class RebuildScanConfig {
     this.trackRects = true,
     this.includeFrameworkWidgetsInAutoScan = false,
   }) : assert(minRebuildsToShow > 0),
-       assert(maxEntries > 0);
+       assert(maxEntries > 0),
+       assert(maxHighlights > 0),
+       assert(heatmapMaxRebuildsPerSecond > 0),
+       assert(targetRefreshRate == null || targetRefreshRate > 0);
+
+  /// Low-overhead configuration for profile diagnostics.
+  const RebuildScanConfig.performance()
+    : this(trackRects: false, showFrameMonitor: true);
+
+  /// Collect completed Flutter engine timings.
+  final bool collectFrameTimings;
+
+  /// Show a compact frame summary.
+  final bool showFrameMonitor;
+
+  /// Show Flutter's engine-rendered timing graphs.
+  final bool showPerformanceOverlay;
+
+  /// Minimum interval between aggregate publications.
+  final Duration statsInterval;
+
+  /// Maximum simultaneously painted targets.
+  final int maxHighlights;
+
+  /// Fixed rebuild rate corresponding to maximum heat.
+  final double heatmapMaxRebuildsPerSecond;
+
+  /// Explicit display budget override in Hz; null uses the attached display.
+  final double? targetRefreshRate;
 
   /// Highlight style used by the overlay painter.
   final HighlightMode highlightMode;
@@ -97,6 +132,13 @@ class RebuildScanConfig {
 
   /// Returns a copy with selected fields replaced.
   RebuildScanConfig copyWith({
+    bool? collectFrameTimings,
+    bool? showFrameMonitor,
+    bool? showPerformanceOverlay,
+    Duration? statsInterval,
+    int? maxHighlights,
+    double? heatmapMaxRebuildsPerSecond,
+    double? targetRefreshRate,
     HighlightMode? highlightMode,
     RebuildBadgeCountMode? badgeCountMode,
     int? minRebuildsToShow,
@@ -109,6 +151,15 @@ class RebuildScanConfig {
     bool? includeFrameworkWidgetsInAutoScan,
   }) {
     return RebuildScanConfig(
+      collectFrameTimings: collectFrameTimings ?? this.collectFrameTimings,
+      showFrameMonitor: showFrameMonitor ?? this.showFrameMonitor,
+      showPerformanceOverlay:
+          showPerformanceOverlay ?? this.showPerformanceOverlay,
+      statsInterval: statsInterval ?? this.statsInterval,
+      maxHighlights: maxHighlights ?? this.maxHighlights,
+      heatmapMaxRebuildsPerSecond:
+          heatmapMaxRebuildsPerSecond ?? this.heatmapMaxRebuildsPerSecond,
+      targetRefreshRate: targetRefreshRate ?? this.targetRefreshRate,
       highlightMode: highlightMode ?? this.highlightMode,
       badgeCountMode: badgeCountMode ?? this.badgeCountMode,
       minRebuildsToShow: minRebuildsToShow ?? this.minRebuildsToShow,
@@ -127,6 +178,13 @@ class RebuildScanConfig {
   @override
   bool operator ==(Object other) {
     return other is RebuildScanConfig &&
+        other.collectFrameTimings == collectFrameTimings &&
+        other.showFrameMonitor == showFrameMonitor &&
+        other.showPerformanceOverlay == showPerformanceOverlay &&
+        other.statsInterval == statsInterval &&
+        other.maxHighlights == maxHighlights &&
+        other.heatmapMaxRebuildsPerSecond == heatmapMaxRebuildsPerSecond &&
+        other.targetRefreshRate == targetRefreshRate &&
         other.highlightMode == highlightMode &&
         other.badgeCountMode == badgeCountMode &&
         other.minRebuildsToShow == minRebuildsToShow &&
@@ -143,12 +201,19 @@ class RebuildScanConfig {
   @override
   int get hashCode {
     return Object.hash(
+      collectFrameTimings,
+      showFrameMonitor,
+      showPerformanceOverlay,
+      statsInterval,
+      maxHighlights,
+      heatmapMaxRebuildsPerSecond,
+      targetRefreshRate,
       highlightMode,
       badgeCountMode,
       minRebuildsToShow,
-      Object.hashAll(ignoreTypes),
+      Object.hashAllUnordered(ignoreTypes),
       showPanel,
-      Object.hashAll(panelOpenMethods),
+      Object.hashAllUnordered(panelOpenMethods),
       sampleWindow,
       maxEntries,
       trackRects,

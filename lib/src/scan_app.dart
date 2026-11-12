@@ -127,11 +127,7 @@ class _ScanAppState extends State<RebuildScanApp> {
       return;
     }
 
-    _controller.recordRebuild(
-      id: id,
-      name: rebuiltWidget.runtimeType.toString(),
-      widgetType: rebuiltWidget.runtimeType,
-    );
+    _controller.recordRebuild(id: id, widgetType: rebuiltWidget.runtimeType);
 
     _controller.queueRectMeasurement(id: id, element: element);
   }
@@ -220,9 +216,11 @@ class _ResolvedScanMode {
 class _AutoScanHookManager {
   static final Set<_ScanAppState> _states = <_ScanAppState>{};
   static RebuildDirtyWidgetCallback? _previousCallback;
+  static List<_ScanAppState> _listeners = [];
 
   static void register(_ScanAppState state) {
     _states.add(state);
+    _listeners = List.of(_states);
     if (_states.length == 1) {
       _previousCallback = debugOnRebuildDirtyWidget;
       debugOnRebuildDirtyWidget = _handleRebuild;
@@ -231,6 +229,7 @@ class _AutoScanHookManager {
 
   static void unregister(_ScanAppState state) {
     _states.remove(state);
+    _listeners = List.of(_states);
     if (_states.isEmpty && debugOnRebuildDirtyWidget == _handleRebuild) {
       debugOnRebuildDirtyWidget = _previousCallback;
       _previousCallback = null;
@@ -239,7 +238,7 @@ class _AutoScanHookManager {
 
   static void _handleRebuild(Element element, bool builtOnce) {
     _previousCallback?.call(element, builtOnce);
-    for (final state in List<_ScanAppState>.of(_states)) {
+    for (final state in _listeners) {
       state._recordAutoRebuild(element);
     }
   }

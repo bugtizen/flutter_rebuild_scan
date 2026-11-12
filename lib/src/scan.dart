@@ -24,7 +24,7 @@ abstract final class RebuildScan {
 
     controller.recordRebuild(
       id: id,
-      name: name ?? widgetType.toString(),
+      name: name,
       tag: tag,
       widgetType: widgetType,
     );
@@ -87,6 +87,7 @@ class _RebuildScanBoundaryState extends State<RebuildScanBoundary> {
     }
 
     final controller = scope.controller;
+    if (_boundController != controller) _boundController?.markDisposed(_id);
     _boundController = controller;
 
     controller.recordRebuild(

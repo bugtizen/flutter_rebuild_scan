@@ -9,35 +9,56 @@ class ScanRegistry {
   final Map<int, RebuildEntry> _entries = <int, RebuildEntry>{};
   final Set<int> _rebuiltThisFrame = <int>{};
   int _totalRebuilds = 0;
+  int currentFrame = 0;
 
   int get totalRebuilds => _totalRebuilds;
   int get entryCount => _entries.length;
+  bool isRecent(int id, int now, int age) =>
+      _entries.containsKey(id) && now - _entries[id]!.lastMicros <= age;
 
   void onRebuild(RebuildEvent event, Duration window) {
-    final entry = _entries.putIfAbsent(
-      event.id,
-      () => RebuildEntry(
-        id: event.id,
-        name: event.name,
-        tag: event.tag,
-        widgetType: event.widgetType,
-      ),
+    record(
+      id: event.id,
+      widgetType: event.widgetType,
+      name: event.name,
+      tag: event.tag,
+      rect: event.rect,
+      frame: event.frame,
+      micros: event.micros,
+      window: window,
     );
+  }
 
-    entry
-      ..name = event.name ?? entry.name
-      ..tag = event.tag ?? entry.tag
-      ..rect = event.rect ?? entry.rect;
-
-    entry.addHit(micros: event.micros, frame: event.frame, window: window);
-
-    _rebuiltThisFrame.add(event.id);
-    _totalRebuilds += 1;
+  void record({
+    required int id,
+    required Type widgetType,
+    String? name,
+    Object? tag,
+    Rect? rect,
+    required int frame,
+    required int micros,
+    required Duration window,
+    int maxEntries = 2000,
+  }) {
+    currentFrame = frame;
+    final entry =
+        _entries.remove(id) ??
+        RebuildEntry(id: id, widgetType: widgetType, name: name, tag: tag);
+    entry.name = name ?? entry.name;
+    entry.tag = tag ?? entry.tag;
+    entry.rect = rect ?? entry.rect;
+    entry.addHit(micros: micros, frame: frame, window: window);
+    _entries[id] = entry;
+    while (_entries.length > maxEntries) {
+      _entries.remove(_entries.keys.first);
+    }
+    _rebuiltThisFrame.add(id);
+    _totalRebuilds++;
   }
 
   void updateRect(int id, {required Rect? rect}) {
     final entry = _entries[id];
-    if (entry == null || rect == null) {
+    if (entry == null) {
       return;
     }
     entry.rect = rect;
@@ -106,39 +127,47 @@ class ScanRegistry {
       return const <RebuildScanEntrySnapshot>[];
     }
 
-    final snapshots = _entries.values
-        .map(
-          (entry) => _toSnapshot(entry, window: window, nowMicros: nowMicros),
-        )
-        .toList();
-
-    snapshots.sort((a, b) {
+    int compare(RebuildScanEntrySnapshot a, RebuildScanEntrySnapshot b) {
       final recent = b.recentCount.compareTo(a.recentCount);
-      if (recent != 0) {
-        return recent;
-      }
+      if (recent != 0) return recent;
       final total = b.totalCount.compareTo(a.totalCount);
-      if (total != 0) {
-        return total;
-      }
-      return b.lastMicros.compareTo(a.lastMicros);
-    });
+      return total != 0 ? total : b.lastMicros.compareTo(a.lastMicros);
+    }
 
-    if (snapshots.length > limit) {
-      return snapshots.sublist(0, limit);
+    final snapshots = <RebuildScanEntrySnapshot>[];
+    for (final entry in _entries.values) {
+      final candidate = _toSnapshot(
+        entry,
+        window: window,
+        nowMicros: nowMicros,
+      );
+      if (snapshots.length == limit &&
+          compare(candidate, snapshots.last) >= 0) {
+        continue;
+      }
+      var index = 0;
+      while (index < snapshots.length &&
+          compare(candidate, snapshots[index]) >= 0) {
+        index++;
+      }
+      snapshots.insert(index, candidate);
+      if (snapshots.length > limit) snapshots.removeLast();
     }
 
     return snapshots;
   }
 
   Map<int, RebuildScanEntrySnapshot> snapshotEntries({
+    Iterable<int>? ids,
     required Duration window,
     required int nowMicros,
   }) {
     final map = HashMap<int, RebuildScanEntrySnapshot>();
-    _entries.forEach((id, entry) {
+    for (final id in ids ?? _entries.keys) {
+      final entry = _entries[id];
+      if (entry == null) continue;
       map[id] = _toSnapshot(entry, window: window, nowMicros: nowMicros);
-    });
+    }
     return map;
   }
 
@@ -154,7 +183,7 @@ class ScanRegistry {
       widgetType: entry.widgetType,
       totalCount: entry.totalCount,
       recentCount: entry.recentCount(window, nowMicros),
-      frameCount: entry.frameCount,
+      frameCount: entry.lastFrame == currentFrame ? entry.frameCount : 0,
       lastFrame: entry.lastFrame,
       lastMicros: entry.lastMicros,
       rect: entry.rect,

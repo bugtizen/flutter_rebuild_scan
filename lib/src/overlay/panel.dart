@@ -13,28 +13,30 @@ class ScanPanelPage extends StatelessWidget {
     required this.controller,
     required this.snapshot,
     required this.onClose,
+    this.onDrag,
   });
 
   final RebuildScanController controller;
   final RebuildScanSnapshot snapshot;
   final VoidCallback onClose;
+  final GestureDragUpdateCallback? onDrag;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Positioned.fill(
+    return SizedBox.expand(
       child: Material(
         color: theme.colorScheme.surface,
         child: SafeArea(
           child: Column(
             children: <Widget>[
-              _buildTopBar(theme),
+              GestureDetector(onPanUpdate: onDrag, child: _buildTopBar(theme)),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: <Widget>[
                     PanelStatChip(
-                      label: 'Frame',
+                      label: 'UI frame',
                       value: '${snapshot.frameNumber}',
                     ),
                     const SizedBox(width: 8),
@@ -45,6 +47,11 @@ class ScanPanelPage extends StatelessWidget {
                   ],
                 ),
               ),
+              if (snapshot.entriesById.length > snapshot.config.maxHighlights &&
+                  snapshot.config.trackRects)
+                Text(
+                  'Visual limit: ${snapshot.config.maxHighlights}; all ${snapshot.entriesById.length} targets counted',
+                ),
               _buildControls(),
               Expanded(child: _buildEntries(theme)),
             ],
@@ -88,19 +95,12 @@ class ScanPanelPage extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Expanded(
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Scanner status'),
-                  subtitle: Text(_statusText(snapshot.status)),
-                ),
-              ),
-            ],
-          ),
-          Row(
-            children: <Widget>[
               Text('Min rebuilds: ${config.minRebuildsToShow}'),
+              const Spacer(),
+              if (config.highlightMode == HighlightMode.heatmap)
+                Text(
+                  '0–${config.heatmapMaxRebuildsPerSecond.toStringAsFixed(0)} builds/s',
+                ),
             ],
           ),
           Slider(
@@ -195,15 +195,6 @@ class ScanPanelPage extends StatelessWidget {
         );
       },
     );
-  }
-
-  String _statusText(RebuildScanStatus status) {
-    return switch (status) {
-      RebuildScanStatus.off => 'Off',
-      RebuildScanStatus.active => 'Active',
-      RebuildScanStatus.debugAutoUnsupported => 'Debug auto unsupported',
-      RebuildScanStatus.noTargets => 'Targeted mode waiting for marks',
-    };
   }
 
   String _emptyStateText(RebuildScanSnapshot snapshot) {

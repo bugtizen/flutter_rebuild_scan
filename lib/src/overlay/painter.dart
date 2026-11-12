@@ -2,31 +2,40 @@
 
 import 'package:flutter/material.dart';
 
+import '../controller.dart';
 import '../config.dart';
 import '../models.dart';
 
 class RebuildScanHighlightPainter extends CustomPainter {
-  RebuildScanHighlightPainter({
-    required this.snapshot,
-    required this.nowMicros,
-  });
+  RebuildScanHighlightPainter({required this.controller, this.origin})
+    : super(repaint: controller.repaint);
 
   static const int _flashMaxAgeMicros = 400000;
-  static const int _nonFlashLingerMicros = 900000;
 
-  final RebuildScanSnapshot snapshot;
-  final int nowMicros;
+  final RebuildScanController controller;
+  final Offset Function()? origin;
+  final Map<String, TextPainter> _badges = {};
+  void disposeResources() {
+    for (final text in _badges.values) {
+      text.dispose();
+    }
+    _badges.clear();
+  }
+
+  late RebuildScanSnapshot snapshot;
+  int nowMicros = 0;
 
   @override
   void paint(Canvas canvas, Size size) {
+    snapshot = controller.visualSnapshot();
+    nowMicros = controller.timestampMicros;
+    canvas.clipRect(Offset.zero & size);
     if (!snapshot.enabled) {
       return;
     }
 
+    final overlayOrigin = origin?.call() ?? Offset.zero;
     final mode = snapshot.config.highlightMode;
-    final maxRecent = snapshot.topEntries.isEmpty
-        ? 1
-        : snapshot.topEntries.first.recentCount.clamp(1, 1000000);
 
     if (mode == HighlightMode.flash) {
       for (final entry in snapshot.entriesById.values) {
@@ -50,7 +59,7 @@ class RebuildScanHighlightPainter extends CustomPainter {
           continue;
         }
 
-        final rect = entry.rect!;
+        final rect = entry.rect!.shift(-overlayOrigin);
         _paintFlash(canvas, rect, flashStrength);
         _paintCounterBadge(
           canvas,
@@ -71,13 +80,19 @@ class RebuildScanHighlightPainter extends CustomPainter {
         continue;
       }
       final ageMicros = nowMicros - entry.lastMicros;
-      if (ageMicros < 0 || ageMicros > _nonFlashLingerMicros) {
+      if (ageMicros < 0 ||
+          ageMicros > snapshot.config.sampleWindow.inMicroseconds) {
         continue;
       }
 
-      final rect = entry.rect!;
+      final rect = entry.rect!.shift(-overlayOrigin);
       if (mode == HighlightMode.heatmap) {
-        final intensity = (entry.recentCount / maxRecent).clamp(0.0, 1.0);
+        final intensity =
+            (entry.recentCount /
+                    snapshot.config.sampleWindow.inMicroseconds *
+                    1000000 /
+                    snapshot.config.heatmapMaxRebuildsPerSecond)
+                .clamp(0.0, 1.0);
         _paintHeatmap(canvas, rect, intensity);
       } else {
         _paintOutline(canvas, rect);
@@ -130,7 +145,7 @@ class RebuildScanHighlightPainter extends CustomPainter {
         const Color(0xFFFFFF8D),
         const Color(0xFFD50000),
         intensity,
-      )!.withValues(alpha: 0.01 + (0.05 * intensity))
+      )!.withValues(alpha: 0.04 + (0.16 * intensity))
       ..style = PaintingStyle.fill;
 
     final outline = Paint()
@@ -155,19 +170,25 @@ class RebuildScanHighlightPainter extends CustomPainter {
     const verticalPadding = 4.0;
     final badgeAlpha = (0.8 + (0.2 * flashStrength)).clamp(0.0, 1.0);
 
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: TextStyle(
-          color: Colors.black.withValues(alpha: 0.85),
-          fontFamily: 'Roboto',
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
+    if (_badges.length >= 128 && !_badges.containsKey(label)) {
+      _badges.remove(_badges.keys.first)!.dispose();
+    }
+    final textPainter = _badges.putIfAbsent(
+      label,
+      () => TextPainter(
+        text: TextSpan(
+          text: label,
+          style: TextStyle(
+            color: Colors.black.withValues(alpha: 0.85),
+            fontFamily: 'Roboto',
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-    )..layout();
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout(),
+    );
 
     final badgeSize = Size(
       textPainter.width + (horizontalPadding * 2),
@@ -214,8 +235,6 @@ class RebuildScanHighlightPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant RebuildScanHighlightPainter oldDelegate) {
-    return oldDelegate.snapshot.frameNumber != snapshot.frameNumber ||
-        oldDelegate.snapshot.config != snapshot.config ||
-        oldDelegate.snapshot.totalRebuilds != snapshot.totalRebuilds;
+    return oldDelegate.controller != controller;
   }
 }

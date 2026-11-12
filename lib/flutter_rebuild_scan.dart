@@ -10,3 +10,5 @@ export 'src/controller.dart';
 export 'src/models.dart' hide RebuildEntry, RebuildEvent;
 export 'src/scan.dart';
 export 'src/scan_app.dart' hide debugResolveRebuildScanStatus;
+
+export 'src/frame_metrics.dart' show FrameMetricsSnapshot;

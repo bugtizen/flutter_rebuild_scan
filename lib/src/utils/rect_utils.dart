@@ -24,29 +24,26 @@ class RectUtils {
       return null;
     }
 
-    final Offset offset;
     try {
-      offset = renderObject.localToGlobal(Offset.zero);
+      var rect = MatrixUtils.transformRect(
+        renderObject.getTransformTo(null),
+        Offset.zero & renderObject.size,
+      );
+      RenderObject child = renderObject;
+      while (child.parent != null) {
+        final parent = child.parent!;
+        if (!parent.paintsChild(child)) return null;
+        final clip = parent.describeApproximatePaintClip(child);
+        if (clip != null) {
+          rect = rect.intersect(
+            MatrixUtils.transformRect(parent.getTransformTo(null), clip),
+          );
+        }
+        child = parent;
+      }
+      return rect.isFinite && !rect.isEmpty ? rect : null;
     } catch (_) {
       return null;
     }
-
-    final size = renderObject.size;
-    if (!_isFiniteOffset(offset) || !_isFiniteSize(size)) {
-      return null;
-    }
-
-    return offset & size;
-  }
-
-  static bool _isFiniteOffset(Offset offset) {
-    return offset.dx.isFinite && offset.dy.isFinite;
-  }
-
-  static bool _isFiniteSize(Size size) {
-    return size.width.isFinite &&
-        size.height.isFinite &&
-        !size.width.isNaN &&
-        !size.height.isNaN;
   }
 }
